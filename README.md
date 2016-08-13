@@ -58,8 +58,8 @@ the old process will be killed.
 
 ## Contributors
 
-https://github.com/orivil/log/graphs/contributors
+https://github.com/orivil/grace/graphs/contributors
 
 ## License
 
-Released under the [MIT License](https://github.com/orivil/log/blob/master/LICENSE).
+Released under the [MIT License](https://github.com/orivil/grace/blob/master/LICENSE).
