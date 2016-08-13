@@ -149,6 +149,7 @@ func ListenAndServeTLS(addr, certFile, keyFile string, h http.Handler) error {
 
 type GraceServer struct {
 	*http.Server
+	netListener net.Listener
 	closeServer chan bool
 	watcher *fsnotify.Watcher
 }
@@ -211,7 +212,8 @@ func (gs *GraceServer) ListenAndServeTLS(certFile, keyFile string) error {
 	config.Certificates = append(config.Certificates, c)
 	gs.TLSConfig = config
 	tlsListener := tls.NewListener(l, config)
-	return gs.Serve(tlsListener)
+	gs.netListener = tlsListener
+	return gs.Serve()
 }
 
 // If the server is graceful stopped, ListenAndServe will return a nil error.
@@ -225,7 +227,8 @@ func (gs *GraceServer) ListenAndServe() error {
 	if err != nil {
 		return err
 	}
-	return gs.Serve(l)
+	gs.netListener = l
+	return gs.Serve()
 }
 
 func (gs *GraceServer) watch() {
@@ -273,12 +276,12 @@ func (gs *GraceServer) killParentProcess() error {
 	}
 }
 
-func (gs *GraceServer) Serve(l net.Listener) error {
+func (gs *GraceServer) Serve() error {
 	errChan := make(chan error)
 	go func() {
-		gs.listenEvents(l)
+		gs.listenEvents()
 		LogF("ready to serve http request...")
-		errChan <- gs.Server.Serve(l)
+		errChan <- gs.Server.Serve(gs.netListener)
 	}()
 
 	select {
@@ -287,12 +290,12 @@ func (gs *GraceServer) Serve(l net.Listener) error {
 		return err
 	case <-gs.closeServer:
 		gs.watcher.Close()
-		l.Close()
+		gs.netListener.Close()
 		return nil
 	}
 }
 
-func (gs *GraceServer) listenEvents(l net.Listener) {
+func (gs *GraceServer) listenEvents() {
 
 	var sig os.Signal
 	signalChan := make(chan os.Signal)
@@ -309,11 +312,11 @@ func (gs *GraceServer) listenEvents(l net.Listener) {
 			switch sig {
 
 			case syscall.SIGTERM, syscall.SIGINT:
-				gs.stop()
+				gs.Stop()
 				return
 
 			case syscall.SIGHUP:
-				gs.restart(l)
+				gs.Restart()
 				return
 
 			default:
@@ -341,29 +344,30 @@ func (gs *GraceServer) listenEvents(l net.Listener) {
 	go func() {
 		for {
 			<- timer.C
-			gs.restart(l)
+			gs.Restart()
 		}
 	}()
 }
 
-func (gs *GraceServer) stop() {
+func (gs *GraceServer) Stop() {
+
 	LogF("closing server...")
 	gs.closeServer <- true
 }
 
-func (gs *GraceServer) restart(l net.Listener) {
+func (gs *GraceServer) Restart() {
 
-		// un-watch the file, otherwise start new process will got error
-		gs.watcher.Remove(os.Args[0])
-		LogF("restarting http server...")
-		err := gs.startNewProcess(l)
-		if err != nil {
+	// un-watch the file, otherwise start new process will got error
+	gs.watcher.Remove(os.Args[0])
+	LogF("restarting http server...")
+	err := gs.startNewProcess()
+	if err != nil {
 
-			// re-watch the file
-			gs.watcher.Add(os.Args[0])
-			ErrF("grace.GraceServer.restart(): %v", err)
-			LogF("continue serving")
-		}
+		// re-watch the file
+		gs.watcher.Add(os.Args[0])
+		ErrF("grace.GraceServer.restart(): %v", err)
+		LogF("continue serving")
+	}
 }
 
 func (gs *GraceServer) getGraceTagArgs() []string {
@@ -378,8 +382,8 @@ func (gs *GraceServer) getGraceTagArgs() []string {
 	return res
 }
 
-func (gs *GraceServer) startNewProcess(l net.Listener) error {
-	if l, ok := l.(CanGetFile); ok {
+func (gs *GraceServer) startNewProcess() error {
+	if l, ok := gs.netListener.(CanGetFile); ok {
 		args := gs.getGraceTagArgs()
 		path := args[0]
 		args = args[1:]
@@ -423,7 +427,7 @@ func (l *Listener) Accept() (net.Conn, error) {
 		return nil, err
 	} else {
 		waitGroup.Add(1)
-		return &gracefulConn{c}, nil
+		return NewGracefulConn(c), nil
 	}
 }
 
@@ -436,11 +440,17 @@ func (l *Listener) Close() error {
 	return err
 }
 
-type gracefulConn struct {
+type GracefulConn struct {
 	net.Conn
 }
 
-func (w gracefulConn) Close() (e error) {
+func NewGracefulConn(c net.Conn) *GracefulConn {
+	return &GracefulConn{
+		Conn: c,
+	}
+}
+
+func (w GracefulConn) Close() (e error) {
 	e = w.Conn.Close()
 	waitGroup.Done()
 	return
