@@ -44,6 +44,7 @@ var ErrF = func(format string, args...interface{}) {
 	log.ErrWarnF("[process %d] " + format, as...)
 }
 
+// TODO: from now on, only tested on windows and linux.
 // IsSupportSocketFile can be overwritten.
 var IsSupportSocketFile = func() bool {
 	if runtime.GOOS == "windows" {
@@ -336,7 +337,9 @@ func (gs *GraceServer) listenEvents() {
 					timer.Reset(200 * time.Millisecond)
 				}
 			case err := <-gs.watcher.Errors:
-				ErrF("grace.GraceServer.listenEvents(): %v", err)
+				if err != nil {
+					ErrF("grace.GraceServer.listenEvents(): %v", err)
+				}
 			}
 		}
 	}()
