@@ -90,12 +90,6 @@ How does it work?
 then will start a new child process with the new executable file, and after that 
 the parent process will wait to exit until all opened connects closed.
 
-## How does it work
-
-The server has a file watcher, In this example it watches the executable file "main"(on Linux) or "main.exe"(on Windows),
-if the file changed, the server will fork a new process and run a new server, if new server be ready, the old process will
- be killed.
-
 ## Contributors
 
 https://github.com/orivil/grace/graphs/contributors
