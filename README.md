@@ -1,60 +1,100 @@
-# Orivil Graceful Http Server
+# Orivil Graceful Net Listener & Http Server
 
 ## Introduction
 
-Package grace provide a graceful restart http server. From now on, it tested on Linux and Windows.
+Package grace provides a graceful net listener and a http server base on the net listener.
+From now on, it worked well on Linux,  tested pass but not graceful on Windows.
 
 ## Install
 
-go get -v gopkg.in/orivil/grace.v0
+go get -v gopkg.in/orivil/grace.v1
 
-## Example
-
-`main.go`:
+## Example Graceful Tcp Server
 
 ```GO
 package main
 
 import (
-    "io"
-    "gopkg.in/orivil/grace.v0"
-    "gopkg.in/orivil/log.v0"
+    "gopkg.in/orivil/grace.v1"
+    "net"
+    "log"
+    "fmt"
 )
-
-func HelloServer(w http.ResponseWriter, req *http.Request) {
-    io.WriteString(w, "hello, world!\n")
-}
 
 func main() {
 
-    http.HandleFunc("/hello", HelloServer)
-    err := grace.ListenAndServe(":12345", nil)
-    if err != nil {
-        log.ErrEmergency(err)
-    }
+    grace.ListenSignal()
+
+    err := grace.ListenNetAndServe("tcp", ":8081", func(c net.Conn) {
+
+        for {
+
+            data := make([]byte, 1024)
+            c.Read(data)
+            fmt.Println(string(data))
+        }
+    })
+
+    log.Fatal(err)
 }
 ```
 
-Open first terminal for building the project: `go build main.go`.
+## Example Graceful Http Server
 
-Open Second terminal for running the server: `main`(Linux) or `main.exe`(Windows).
+```GO
+package main
 
-After you updated your project, you need to open the first terminal and re-build the project: `go build main.go`.
+import (
+	"io"
+	"log"
+	"gopkg.in/orivil/grace.v1"
+	"net/http"
+)
 
-You can see the graceful restart information in the second terminal.
+func main() {
 
-Or you can open a third terminal to control it(not support on Windows):
+    grace.ListenSignal()
+    
+	http.HandleFunc("/", func (w http.ResponseWriter, req *http.Request) {
+	
+        io.WriteString(w, "hello, world!\n")
+    })
+    
+	err := grace.ListenAndServe(":12345", nil)
+	if err != nil {
+		log.Fatal(err)
+	}
+}
+```
 
-> graceful restart: `kill -HUP $pid`
+## Graceful Restart With Command
+
+> restart: `kill -HUP $pid`
 >
-> stop server: `kill $pid`
+> stop: `kill $pid`
 
+
+## Automatic Graceful Restart
+
+e.g.:
+
+> open 1st terminal and build project: `go build server.go`
+>
+> open 2nd terminal and run server: `./server`
+>
+> open 1st terminal and rebuild build project: `go build server.go`
+
+How does it work?
+
+> the program will detected the executable file event, if the file was updated,
+then will start a new child process with the new executable file, and after that 
+the parent process will wait to exit until all opened connects closed.
 
 ## How does it work
 
 The server has a file watcher, In this example it watches the executable file "main"(on Linux) or "main.exe"(on Windows),
-if the file changed, the server will fork a new process and run a new server, if new server is ready,
-the old process will be killed.
+if the file changed, the server will fork a new process and run a new server, if new server be ready, the old process will
+ be killed.
 
 ## Contributors
 
