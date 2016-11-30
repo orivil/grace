@@ -8,6 +8,7 @@ import (
 	"os"
 	"io"
 	"gopkg.in/orivil/log.v0"
+	"bufio"
 )
 
 func main() {
@@ -24,29 +25,33 @@ func main() {
 		log.Println("fatal error: " + err.Error())
 		return
 	}
-
 	_, err = io.WriteString(conn, name)
 	if err != nil {
 		panic(err)
 	}
 
 	go func() {
-		var msg string
 		for {
 
-			fmt.Scan(&msg)
-			io.WriteString(conn, msg)
+			in := bufio.NewReader(os.Stdin)
+
+			line, err := in.ReadString('\n')
+			if err != nil {
+				panic(err)
+			}
+			conn.Write([]byte(line[0:len(line)-1]))
 		}
 	}()
 
 	for {
 		data := make([]byte, 1024)
 
-		_, err = conn.Read(data)
+		n, err := conn.Read(data)
 		if err != nil {
 			panic(err)
 		}
 
+		data = data[0:n]
 		fmt.Print(string(data))
 	}
 }

@@ -69,13 +69,13 @@ func main() {
 
 		var user User
 		var name = make([]byte, 256)
-
-		_, err := c.Read(name)
+		n, err := c.Read(name)
 		if err != nil {
 			logf("read user got error: %v\n", err)
 			return
 		}
-		user = User(name)
+		name = name[0:n]
+		user = User(string(name))
 
 		defer func() {
 			room.RemoveUser(user)
@@ -96,14 +96,13 @@ func main() {
 		broadRoom()
 
 		for {
-
 			data := make([]byte, 1024)
-			_, err := c.Read(data)
+			n, err := c.Read(data)
 			// close current connect.
 			if err != nil {
 				return
 			}
-
+			data = data[0:n]
 			msg := sprintf("[%s]:%s\n", user, string(data))
 			broadcast(msg)
 		}

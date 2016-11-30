@@ -11,6 +11,8 @@ import (
 
 func main() {
 
+	grace.ListenSignal()
+
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 
 		io.WriteString(w, "hello world!")

@@ -3,7 +3,14 @@
 ## Introduction
 
 Package grace provides a graceful net listener and a http server base on the net listener.
-From now on, it worked well on Linux,  tested pass but not graceful on Windows.
+
+
+## Platform
+
+| OS | Status |
+|----------|----------|
+| ubuntu 14.04 | worked well |
+| windows 7 | test pass(but not graceful) |
 
 ## Install
 
@@ -23,6 +30,11 @@ import (
 
 func main() {
 
+    // ListenSignal listens system signals and watches the executable file events.
+    // it will automatically restart the server when it got signal or file event.
+    //
+    // listen signal is an custom option, some times if we need to restart or stop
+    // server manually, we can directly use the method Restart() or Stop().
     grace.ListenSignal()
 
     err := grace.ListenNetAndServe("tcp", ":8081", func(c net.Conn) {
@@ -30,8 +42,12 @@ func main() {
         for {
 
             data := make([]byte, 1024)
-            c.Read(data)
-            fmt.Println(string(data))
+            n, err := c.Read(data)
+            if err != nil {
+                log.Println(err)
+                return
+            }
+            fmt.Println(string(data[0:n]))
         }
     })
 

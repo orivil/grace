@@ -209,23 +209,33 @@ func startNewProcess() error {
 		args = args[1:]
 	}
 
-	r, w, err := os.Pipe()
-	if err != nil {
-		return err
+	var pipeReader, pipeWriter *os.File
+	var err error
+	if osSupportSocketFile {
+		pipeReader, pipeWriter, err = os.Pipe()
+		if err != nil {
+			return err
+		}
 	}
 
 	cmd := exec.Command(path, args...)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	cmd.Stdin = os.Stdin
-	cmd.ExtraFiles = append([]*os.File{r}, socketFiles...)
+
+	if osSupportSocketFile {
+		cmd.ExtraFiles = append([]*os.File{pipeReader}, socketFiles...)
+	}
 
 	err = cmd.Start()
 	if err != nil {
 		return err
 	}
 
-	return json.NewEncoder(w).Encode(socketIndex)
+	if osSupportSocketFile {
+		return json.NewEncoder(pipeWriter).Encode(socketIndex)
+	}
+	return nil
 }
 
 func initSocketFiles() error {
@@ -368,76 +378,89 @@ func Stop() {
 	os.Exit(0)
 }
 
+var once = &sync.Once{}
+
 // ListenSignal listens system signals and watches the executable file events.
+// it will automatically restart the server when it got signal or file event.
 //
 // when process got signal "syscall.SIGHUP"(in linux use command: kill -HUP $pid),
-// the old process will use the same executable file start a new child process
-// and wait to exited after all opened connects closed.
+// the old process will use the same executable file to start a new child process
+// and wait to exit until all opened connects closed.
 //
 // when process got signal "syscall.SIGINT" or signal "syscall.SIGTERM", the process
 // will wait to exit until all opened connects closed.
 //
 // when the executable file trigger event "fsnotify.Chmod"(e.g. when rebuild a project,
 // this will generate a new executable file and trigger the event), the old process
-// will use the new executable file to start a new child process, and wait to exited
-// after all opened connects closed.
-func ListenSignal() error {
+// will use the new executable file to start a new child process, and wait to exit
+// until all opened connects closed.
+//
+// listen signal is an custom option, some times if we need to restart or stop server
+// manually, we can use the method Restart() or Stop() directly.
+func ListenSignal() {
 
-	// listen signals.
-	signalChan := make(chan os.Signal)
+	once.Do(func() {
 
-	signal.Notify(
-		signalChan,
-		syscall.SIGTERM,
-		syscall.SIGHUP,
-		syscall.SIGINT,
-	)
+		// listen signals.
+		signalChan := make(chan os.Signal)
 
-	go func() {
-		sig := <-signalChan
-		switch sig {
-		case syscall.SIGHUP:
-			Restart()
-		case syscall.SIGTERM, syscall.SIGINT:
-			Stop()
+		signal.Notify(
+			signalChan,
+			syscall.SIGTERM,
+			syscall.SIGHUP,
+			syscall.SIGINT,
+		)
+
+		go func() {
+			sig := <-signalChan
+			switch sig {
+			case syscall.SIGHUP:
+				Restart()
+			case syscall.SIGTERM, syscall.SIGINT:
+				Stop()
+			}
+		}()
+
+		// listen file event.
+		watcher, err := fsnotify.NewWatcher()
+		if err != nil {
+			log.Printf("grace.ListenSignal(): %v\n", err)
+			return
 		}
-	}()
 
-	// listen file event.
-	watcher, err := fsnotify.NewWatcher()
-	if err != nil {
-		return err
-	}
+		BeforeCloseCall(func() {
 
-	BeforeCloseCall(func() {
+			watcher.Close()
+		})
 
-		watcher.Close()
-	})
+		timer := time.NewTimer(0)
+		<-timer.C
+		go func() {
 
-	timer := time.NewTimer(0)
-	<-timer.C
-	go func() {
+			for {
+				select {
+				case evt := <-watcher.Events:
 
-		for {
-			select {
-			case evt := <-watcher.Events:
-
-				if evt.Op & fsnotify.Chmod == fsnotify.Chmod {
-					// send restart command in 1 second after got last file event.
-					timer.Reset(time.Second)
-				}
-			case err := <-watcher.Errors:
-				if err != nil {
-					log.Printf("grace.ListenSignal(): %v\n", err)
+					switch evt.Op {
+					case fsnotify.Chmod, fsnotify.Write:
+						timer.Reset(time.Second)
+					}
+				case err := <-watcher.Errors:
+					if err != nil {
+						log.Printf("grace.ListenSignal(): %v\n", err)
+					}
 				}
 			}
+		}()
+
+		go func() {
+			<-timer.C
+			Restart()
+		}()
+
+		err = watcher.Add(os.Args[0])
+		if err != nil {
+			log.Printf("grace.ListenSignal(): %v\n", err)
 		}
-	}()
-
-	go func() {
-		<-timer.C
-		Restart()
-	}()
-
-	return watcher.Add(os.Args[0])
+	})
 }
