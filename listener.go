@@ -19,6 +19,7 @@ import (
 	"github.com/fsnotify/fsnotify"
 	"time"
 	"fmt"
+	"path/filepath"
 )
 
 const graceTag = "graceful"
@@ -201,7 +202,10 @@ func startNewProcess() error {
 
 	logf("starting new process...\n")
 	args := os.Args
-	path := args[0]
+	path, err := filepath.Abs(args[0])
+	if err != nil {
+		return err
+	}
 	// replace first arg(like "./main") with "-graceful"
 	if !isChildProcess {
 		args[0] = "-" + graceTag
@@ -210,7 +214,7 @@ func startNewProcess() error {
 	}
 
 	var pipeReader, pipeWriter *os.File
-	var err error
+
 	if osSupportSocketFile {
 		pipeReader, pipeWriter, err = os.Pipe()
 		if err != nil {
