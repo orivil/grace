@@ -14,7 +14,7 @@ import (
 func main() {
 
 	if len(os.Args) != 2 {
-		fmt.Fprintf(os.Stderr, "Usage: %s name ", os.Args[0])
+		fmt.Fprintf(os.Stderr, "Usage: %s name \n", os.Args[0])
 		os.Exit(1)
 	}
 	name := os.Args[1]
